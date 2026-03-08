@@ -2,8 +2,11 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
   </head>
 
@@ -17,14 +20,16 @@
         <a-asset-item id="heart" src="beating-heart.glb"></a-asset-item>
       </a-assets>
 
-      <a-marker type="pattern" url="pattern-图片1.patt">
+      <a-marker type="pattern" url="pattern-pic1.patt">
+        
         <a-entity 
           gltf-model="#heart" 
-          scale="1 1 1" 
+          scale="3 3 3" 
           rotation="-90 0 0" 
           position="0 0 0"
           animation-mixer>
         </a-entity>
+
       </a-marker>
 
       <a-entity camera></a-entity>
