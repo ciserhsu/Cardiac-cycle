@@ -1,30 +1,378 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
-  </head>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>心动周期模拟系统</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.4.2/aframe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
 
-  <body style="margin: 0px; overflow: hidden;">
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: true; trackingMethod: best;">
-      
-      <a-assets>
-        <a-asset-item id="heart" src="beating-heart.glb"></a-asset-item>
-      </a-assets>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #0b192c; }
+        
+        /* UI 布局 */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10; display: flex; flex-direction: column;
+        }
+        
+        /* 顶部提示框 */
+        #message-box {
+            background: rgba(0, 0, 0, 0.7); color: white; padding: 15px 25px;
+            margin: 20px auto; border-radius: 8px; font-size: 18px;
+            text-align: center; max-width: 60%; border: 1px solid #4CAF50;
+            transition: opacity 0.3s;
+        }
+        
+        /* 错误提示标签 */
+        #error-toast {
+            position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+            padding: 10px 20px; border-radius: 5px; font-weight: bold; color: white;
+            opacity: 0; transition: opacity 0.3s;
+        }
+        
+        /* 底部控制台与图表 */
+        #bottom-panel {
+            margin-top: auto; display: flex; justify-content: space-between;
+            align-items: flex-end; padding: 20px;
+        }
+        
+        #controls { pointer-events: auto; display: flex; gap: 10px; }
+        
+        button {
+            padding: 12px 24px; font-size: 16px; font-weight: bold; cursor: pointer;
+            border: none; border-radius: 5px; background-color: #3498db; color: white;
+            transition: background 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        button:hover { background-color: #2980b9; }
+        button:active { transform: translateY(2px); box-shadow: none; }
+        #btn-reset { background-color: #e74c3c; }
+        #btn-reset:hover { background-color: #c0392b; }
+        
+        /* 压力曲线图表容器 */
+        #chart-container {
+            width: 400px; height: 250px; background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px; padding: 10px; pointer-events: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
 
-      <a-marker type="pattern" url="pattern-pic1.patt">
-        <a-entity 
-          gltf-model="#heart" 
-          scale="3 3 3" 
-          rotation="-90 0 0" 
-          animation-mixer>
+    <div id="ui-layer">
+        <div id="message-box">系统加载中...</div>
+        <div id="error-toast">错误提示</div>
+        
+        <div id="bottom-panel">
+            <div id="controls">
+                <button id="btn-systole">心室收缩</button>
+                <button id="btn-diastole">舒张心室</button>
+                <button id="btn-reset">重置</button>
+            </div>
+            <div id="chart-container">
+                <canvas id="pressureChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <a-scene embedded vr-mode-ui="enabled: true" background="color: #0b192c">
+        <a-entity camera look-controls position="0 1.5 4"></a-entity>
+
+        <a-light type="ambient" color="#ffffff" intensity="0.6"></a-light>
+        <a-light type="directional" color="#ffffff" intensity="0.8" position="-1 2 1"></a-light>
+
+        <a-entity id="heart-model" position="0 1.5 0">
+            <a-sphere id="atrium" position="0.5 1.2 0" radius="0.6" color="#add8e6" opacity="0.8"></a-sphere>
+            <a-text value="左心房" position="1.2 1.2 0" color="white" scale="0.8 0.8 0.8"></a-text>
+
+            <a-sphere id="ventricle" position="0 0 0" radius="0.8" color="#f1c40f" material="emissive: #333"></a-sphere>
+            <a-text value="左心室" position="1 0 0" color="white" scale="0.8 0.8 0.8"></a-text>
+
+            <a-cylinder id="aorta" position="-0.8 1.5 0" radius="0.3" height="1.5" color="#add8e6" rotation="0 0 30" opacity="0.8"></a-cylinder>
+            <a-text value="主动脉" position="-1.5 1.5 0" color="white" scale="0.8 0.8 0.8"></a-text>
+
+            <a-torus position="0.25 0.7 0" radius="0.25" radius-tubular="0.02" color="#3498db" rotation="90 0 0"></a-torus>
+            <a-plane id="mitral-flap" position="0.25 0.7 0" width="0.4" height="0.4" color="#3498db" rotation="-90 0 0" opacity="0.7"></a-plane>
+
+            <a-torus position="-0.45 0.9 0" radius="0.25" radius-tubular="0.02" color="#2ecc71" rotation="60 0 0"></a-torus>
+            <a-plane id="aortic-flap" position="-0.45 0.9 0" width="0.4" height="0.4" color="#2ecc71" rotation="-30 0 0" opacity="0.7"></a-plane>
+            
+            <a-entity id="particle-container"></a-entity>
         </a-entity>
-      </a-marker>
-
-      <a-entity camera></a-entity>
     </a-scene>
-  </body>
+
+    <script>
+        // 状态机常量
+        const STATES = {
+            INITIAL: 0,
+            ISO_CONTRACTION: 1, // 等容收缩
+            EJECTION: 2,        // 射血
+            ISO_RELAXATION: 3,  // 等容舒张
+            FILLING: 4          // 充盈
+        };
+
+        let currentState = STATES.INITIAL;
+        let isAnimating = false; // 动作锁
+        let chartInstance = null;
+        let chartTime = 0;
+
+        // 获取 DOM 元素
+        const ventricle = document.getElementById('ventricle');
+        const mitralFlap = document.getElementById('mitral-flap');
+        const aorticFlap = document.getElementById('aortic-flap');
+        const particleContainer = document.getElementById('particle-container');
+        const msgBox = document.getElementById('message-box');
+        const errorToast = document.getElementById('error-toast');
+
+        // 显示消息
+        function showMessage(text) {
+            msgBox.innerText = text;
+        }
+
+        // 显示错误防护警告 (实现脚本中的8种错误防呆机制)
+        function showError(text, color) {
+            errorToast.innerText = text;
+            errorToast.style.backgroundColor = color === 'red' ? '#e74c3c' : '#f39c12';
+            errorToast.style.opacity = 1;
+            setTimeout(() => { errorToast.style.opacity = 0; }, 1200);
+        }
+
+        // 初始化 Chart.js 压力曲线
+        function initChart() {
+            const ctx = document.getElementById('pressureChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [0],
+                    datasets: [
+                        { label: '心室压 (LV)', borderColor: 'red', data: [5], tension: 0.2, pointRadius: 0 },
+                        { label: '心房压 (LA)', borderColor: 'black', data: [2], tension: 0.2, pointRadius: 0 },
+                        { label: '主动脉压 (Ao)', borderColor: '#3498db', data: [80], tension: 0.2, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    animation: false, // 提高实时渲染性能
+                    scales: {
+                        y: { min: 0, max: 120, title: { display: true, text: 'Pressure (mm Hg)' } },
+                        x: { display: false } // 隐藏 X 轴标签
+                    },
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: {size: 10} } } }
+                }
+            });
+        }
+
+        // 更新图表数据
+        function updateChart(lv, la, ao) {
+            chartTime++;
+            chartInstance.data.labels.push(chartTime);
+            chartInstance.data.datasets[0].data.push(lv);
+            chartInstance.data.datasets[1].data.push(la);
+            chartInstance.data.datasets[2].data.push(ao);
+            
+            // 保持曲线滚动
+            if(chartInstance.data.labels.length > 50) {
+                chartInstance.data.labels.shift();
+                chartInstance.data.datasets.forEach(d => d.data.shift());
+            }
+            chartInstance.update();
+        }
+
+        // 粒子发射器
+        function emitParticles(startPos, endPos, count, duration, sizeChange = null) {
+            return new Promise(resolve => {
+                let emitted = 0;
+                const interval = duration / count;
+
+                const timer = setInterval(() => {
+                    if (emitted >= count) {
+                        clearInterval(timer);
+                        resolve();
+                        return;
+                    }
+                    
+                    // 创建粒子
+                    const p = document.createElement('a-sphere');
+                    p.setAttribute('radius', '0.05');
+                    p.setAttribute('color', '#8b0000'); // 深红色血流
+                    p.setAttribute('position', startPos);
+                    particleContainer.appendChild(p);
+
+                    // 粒子动画 (Tween.js)
+                    new TWEEN.Tween({ x: startPos.x, y: startPos.y, z: startPos.z })
+                        .to({ x: endPos.x, y: endPos.y, z: endPos.z }, 800)
+                        .easing(TWEEN.Easing.Quadratic.Out)
+                        .onUpdate(coords => { p.setAttribute('position', `${coords.x} ${coords.y} ${coords.z}`); })
+                        .onComplete(() => { p.parentNode.removeChild(p); })
+                        .start();
+                    
+                    emitted++;
+                }, interval);
+                
+                // 心室大小联动
+                if(sizeChange) {
+                    new TWEEN.Tween({ scale: ventricle.getAttribute('radius') })
+                        .to({ scale: sizeChange }, duration)
+                        .onUpdate(obj => { ventricle.setAttribute('radius', obj.scale); })
+                        .start();
+                }
+            });
+        }
+
+        // TWEEN 动画循环更新引擎
+        requestAnimationFrame(function animate(time) {
+            requestAnimationFrame(animate);
+            TWEEN.update(time);
+        });
+
+        // 核心交互：收缩心室
+        document.getElementById('btn-systole').addEventListener('click', async () => {
+            // --- 错误操作防护系统 (逻辑校验) ---
+            if (isAnimating) {
+                if (currentState === STATES.ISO_CONTRACTION || currentState === STATES.EJECTION) {
+                    showError("已在收缩中，请等待完成", "yellow"); // 场景2
+                } else {
+                    showError("已在舒张中，请等待", "yellow"); // 场景4
+                }
+                return;
+            }
+            if (currentState === STATES.FILLING || currentState === STATES.ISO_RELAXATION) {
+                showError("房室瓣未关，心室无法收缩", "red"); // 场景3
+                return;
+            }
+            // ------------------------------------
+
+            isAnimating = true;
+            
+            // 1. 等容收缩期 (模拟 5秒)
+            currentState = STATES.ISO_CONTRACTION;
+            showMessage("心室开始收缩... (等容收缩期)");
+            
+            // 颜色渐变: 黄(#f1c40f) -> 红(#e74c3c)
+            new TWEEN.Tween({ r: 241, g: 196, b: 15, lvPress: 5, aoPress: 80 })
+                .to({ r: 231, g: 76, b: 60, lvPress: 82, aoPress: 78 }, 5000)
+                .onUpdate(obj => {
+                    ventricle.setAttribute('color', `rgb(${Math.round(obj.r)}, ${Math.round(obj.g)}, ${Math.round(obj.b)})`);
+                    updateChart(obj.lvPress, 2, obj.aoPress); // 更新压力
+                })
+                .start();
+                
+            await new Promise(r => setTimeout(r, 5000));
+            showMessage("等容收缩期结束。心室内压即将超过主动脉压，准备射血。");
+            await new Promise(r => setTimeout(r, 1500));
+
+            // 2. 射血期
+            currentState = STATES.EJECTION;
+            
+            // 打开主动脉瓣 (0.25秒完成翻转)
+            new TWEEN.Tween({ rot: -30 }).to({ rot: 60 }, 250).onUpdate(obj => {
+                aorticFlap.setAttribute('rotation', `${obj.rot} 0 0`);
+            }).start();
+            
+            // 快速射血期 (缩短比例演示，代码为 40个/4秒)
+            showMessage("快速射血期 (射出总血量2/3)");
+            const chartSim1 = setInterval(() => updateChart(110, 2, 108), 100);
+            await emitParticles({x:0,y:0.2,z:0}, {x:-0.8,y:2,z:0}, 40, 4000, 0.6); // 心室缩小至 0.6
+            clearInterval(chartSim1);
+
+            // 减慢射血期 (20个/3秒)
+            showMessage("减慢射血期 (射出总血量1/3)");
+            const chartSim2 = setInterval(() => updateChart(90, 3, 90), 100);
+            await emitParticles({x:0,y:0.2,z:0}, {x:-0.8,y:2,z:0}, 20, 3000, 0.5); 
+            clearInterval(chartSim2);
+
+            // 关闭主动脉瓣
+            new TWEEN.Tween({ rot: 60 }).to({ rot: -30 }, 250).onUpdate(obj => {
+                aorticFlap.setAttribute('rotation', `${obj.rot} 0 0`);
+            }).start();
+
+            showMessage("射血完成，健康成年人安静状态射血量60-80 mL。请点击‘舒张心室’按钮");
+            isAnimating = false;
+        });
+
+        // 核心交互：舒张心室
+        document.getElementById('btn-diastole').addEventListener('click', async () => {
+            // --- 错误操作防护系统 (逻辑校验) ---
+            if (isAnimating) {
+                if (currentState === STATES.ISO_RELAXATION || currentState === STATES.FILLING) {
+                    showError("已在舒张中，请等待", "yellow"); // 场景4
+                } else {
+                    showError("已在收缩中，请等待完成", "yellow"); // 场景2
+                }
+                return;
+            }
+            if (currentState === STATES.INITIAL || currentState === STATES.ISO_CONTRACTION) {
+                showError("动脉瓣未关，心室无法舒张", "red"); // 场景1
+                return;
+            }
+            // ------------------------------------
+
+            isAnimating = true;
+
+            // 3. 等容舒张期 (模拟 8秒，此处代码缩短为 4秒以防等待过长，可调整)
+            currentState = STATES.ISO_RELAXATION;
+            showMessage("心室开始舒张... (等容舒张期)");
+
+            // 颜色渐变: 红(#e74c3c) -> 黄(#f1c40f)
+            new TWEEN.Tween({ r: 231, g: 76, b: 60, lvPress: 90, aoPress: 90 })
+                .to({ r: 241, g: 196, b: 15, lvPress: 1, aoPress: 100 }, 4000)
+                .onUpdate(obj => {
+                    ventricle.setAttribute('color', `rgb(${Math.round(obj.r)}, ${Math.round(obj.g)}, ${Math.round(obj.b)})`);
+                    updateChart(obj.lvPress, 4, obj.aoPress); 
+                })
+                .start();
+
+            await new Promise(r => setTimeout(r, 4000));
+            showMessage("等容舒张期结束。心室内压即将低于心房内压，房室瓣准备开放。");
+            await new Promise(r => setTimeout(r, 1500));
+
+            // 4. 充盈期
+            currentState = STATES.FILLING;
+
+            // 打开二尖瓣 (0.33秒)
+            new TWEEN.Tween({ rot: -90 }).to({ rot: -50 }, 330).onUpdate(obj => {
+                mitralFlap.setAttribute('rotation', `${obj.rot} 0 0`);
+            }).start();
+
+            // 快速充盈期 (40个/4秒)
+            showMessage("快速充盈期 (进入心室占总充盈量2/3)");
+            const chartSim3 = setInterval(() => updateChart(2, 4, 80), 100);
+            await emitParticles({x:0.5,y:1,z:0}, {x:0,y:0,z:0}, 40, 4000, 0.7); // 心室变大
+            clearInterval(chartSim3);
+
+            // 减慢充盈期 (15个/3秒)
+            showMessage("减慢充盈期");
+            const chartSim4 = setInterval(() => updateChart(3, 5, 75), 100);
+            await emitParticles({x:0.5,y:1,z:0}, {x:0,y:0,z:0}, 15, 3000, 0.75);
+            clearInterval(chartSim4);
+
+            // 心房收缩期 (5个/2秒)
+            showMessage("心房收缩期");
+            const chartSim5 = setInterval(() => updateChart(5, 7, 70), 100);
+            await emitParticles({x:0.5,y:1,z:0}, {x:0,y:0,z:0}, 5, 2000, 0.8); // 恢复初始大小
+            clearInterval(chartSim5);
+
+            // 关闭二尖瓣
+            new TWEEN.Tween({ rot: -50 }).to({ rot: -90 }, 330).onUpdate(obj => {
+                mitralFlap.setAttribute('rotation', `${obj.rot} 0 0`);
+            }).start();
+
+            showMessage("充盈完成。请点击‘心室收缩’按钮重新开始");
+            currentState = STATES.INITIAL;
+            isAnimating = false;
+        });
+
+        // 重置按钮
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            window.location.reload(); // 最稳定的重置方式
+        });
+
+        // 页面启动
+        window.onload = () => {
+            initChart();
+            showMessage("现在是等容收缩期，请点击‘心室收缩’按钮开始模拟");
+        };
+    </script>
+</body>
 </html>
